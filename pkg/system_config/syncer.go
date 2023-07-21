@@ -149,6 +149,10 @@ func (s *SystemConfigSyncer) syncer() {
 	}
 }
 
+//+kubebuilder:rbac:groups=core,resources=configmap,verbs=get;list;watch,namespace="openshift-config"
+//+kubebuilder:rbac:groups=core,resources=configmap,verbs=get;list;watch,namespace="openshift-image-registry"
+//+kubebuilder:rbac:groups=config.openshift.io,resources=images,verbs=get;list;watch
+
 // newSystemConfigSyncer creates a new SystemConfigSyncer object
 func newSystemConfigSyncer() IConfigSyncer {
 	ic := &SystemConfigSyncer{
