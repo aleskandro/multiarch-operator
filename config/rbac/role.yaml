@@ -73,6 +73,40 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - operator.openshift.io
+  resources:
+  - imagecontentsourcepolicies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - operator.openshift.io.openshift.io
+  resources:
+  - imagecontentsourcepolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - operator.openshift.io.openshift.io
+  resources:
+  - imagecontentsourcepolicies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - operator.openshift.io.openshift.io
+  resources:
+  - imagecontentsourcepolicies/status
+  verbs:
+  - get
+  - patch
+  - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

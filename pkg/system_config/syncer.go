@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	ocpv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/operator/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -152,6 +153,7 @@ func (s *SystemConfigSyncer) syncer() {
 //+kubebuilder:rbac:groups=core,resources=configmap,verbs=get;list;watch,namespace="openshift-config"
 //+kubebuilder:rbac:groups=core,resources=configmap,verbs=get;list;watch,namespace="openshift-image-registry"
 //+kubebuilder:rbac:groups=config.openshift.io,resources=images,verbs=get;list;watch
+//+kubebuilder:rbac:groups=operator.openshift.io,resources=imagecontentsourcepolicies,verbs=get;list;watch
 
 // newSystemConfigSyncer creates a new SystemConfigSyncer object
 func newSystemConfigSyncer() IConfigSyncer {
@@ -180,8 +182,9 @@ func newSystemConfigSyncer() IConfigSyncer {
 	if err != nil {
 		klog.Fatalf("error registering handler for the configmap image-registry-certificates: %w", err)
 	}
-	err = ocpv1.AddToScheme(scheme.Scheme)
+	err = ocpv1.Install(scheme.Scheme)
 	if err != nil {
+		klog.Errorf("error installing the ocp v1 scheme: %v", err)
 		return nil
 	}
 
@@ -204,6 +207,39 @@ func newSystemConfigSyncer() IConfigSyncer {
 		klog.Fatalf("error registering handler for the image.config.openshift.io/cluster object: %w", err)
 	}
 
+	err = v1alpha1.Install(scheme.Scheme)
+	if err != nil {
+		klog.Errorf("error installing the ocp v1alpha1 scheme: %v", err)
+		return nil
+	}
+
+	err = core.NewResourceEventHandler[*v1alpha1.ImageContentSourcePolicy, *v1alpha1.ImageContentSourcePolicyList](ctx,
+		"", time.Hour,
+		func(et watch.EventType, icsp *v1alpha1.ImageContentSourcePolicy) {
+			switch et {
+			case watch.Added, watch.Modified:
+				for _, source := range icsp.Spec.RepositoryDigestMirrors {
+					err = ic.UpdateRegistryMirroringConfig(source.Source, source.Mirrors)
+					if err != nil {
+						// TODO
+						klog.Warningf("error updating registry mirroring config %s's source %s : %w",
+							icsp.Name, source.Source, err)
+						continue
+					}
+				}
+			case watch.Deleted:
+				// TODO is this valid
+				for _, source := range icsp.Spec.RepositoryDigestMirrors {
+					err = ic.DeleteRegistryMirroringConfig(source.Source)
+					if err != nil {
+						// TODO
+						klog.Warningf("error removing registry mirroring config %s's source %s : %w",
+							icsp.Name, source.Source, err)
+						continue
+					}
+				}
+			}
+		}, nil)
 	return ic
 }
 

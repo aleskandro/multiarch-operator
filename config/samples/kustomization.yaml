@@ -2,4 +2,5 @@
 resources:
 - core_v1_pod.yaml
 - multiarch_v1alpha1_podplacementconfig.yaml
+- operator.openshift.io_v1alpha1_imagecontentsourcepolicy.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples
