@@ -1,18 +1,10 @@
 package system_config
 
 import (
-	"context"
 	"fmt"
-	ocpv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/operator/v1alpha1"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
-	"multiarch-operator/controllers/core"
 	"os"
 	"sync"
-	"time"
 )
 
 var (
@@ -164,88 +156,15 @@ func newSystemConfigSyncer() IConfigSyncer {
 		ch:                    make(chan bool),
 	}
 	go ic.syncer()
-	ctx := context.Background()
-	err := core.NewSingleObjectEventHandler[*v1.ConfigMap, *v1.ConfigMapList](ctx,
-		"image-registry-certificates", "openshift-image-registry",
-		time.Hour, func(et watch.EventType, cm *v1.ConfigMap) {
-			if et == watch.Deleted || et == watch.Bookmark {
-				klog.Warningf("Ignoring event type: %+v", et)
-				return
-			}
-			klog.Warningln("the image-registry-certificates configmap has been updated.")
-			err := ic.StoreRegistryCerts(parseRegistryCerts(cm))
-			if err != nil {
-				klog.Warningf("error updating registry certs: %w", err)
-				return
-			}
-		}, nil)
-	if err != nil {
-		klog.Fatalf("error registering handler for the configmap image-registry-certificates: %w", err)
-	}
-	err = ocpv1.Install(scheme.Scheme)
-	if err != nil {
-		klog.Errorf("error installing the ocp v1 scheme: %v", err)
-		return nil
-	}
-
-	err = core.NewSingleObjectEventHandler[*ocpv1.Image, *ocpv1.ImageList](ctx,
-		"cluster", "", time.Hour,
-		func(et watch.EventType, image *ocpv1.Image) {
-			if et == watch.Deleted || et == watch.Bookmark {
-				klog.Warningf("Ignoring event type: %+v", et)
-				return
-			}
-			klog.Warningln("the image.config.openshift.io/cluster object has been updated.")
-			err := ic.StoreImageRegistryConf(image.Spec.RegistrySources.AllowedRegistries,
-				image.Spec.RegistrySources.BlockedRegistries, image.Spec.RegistrySources.InsecureRegistries)
-			if err != nil {
-				klog.Warningf("error updating registry conf: %w", err)
-				return
-			}
-		}, nil)
-	if err != nil {
-		klog.Fatalf("error registering handler for the image.config.openshift.io/cluster object: %w", err)
-	}
-
-	err = v1alpha1.Install(scheme.Scheme)
-	if err != nil {
-		klog.Errorf("error installing the ocp v1alpha1 scheme: %v", err)
-		return nil
-	}
-
-	err = core.NewResourceEventHandler[*v1alpha1.ImageContentSourcePolicy, *v1alpha1.ImageContentSourcePolicyList](ctx,
-		"", time.Hour,
-		func(et watch.EventType, icsp *v1alpha1.ImageContentSourcePolicy) {
-			switch et {
-			case watch.Added, watch.Modified:
-				for _, source := range icsp.Spec.RepositoryDigestMirrors {
-					err = ic.UpdateRegistryMirroringConfig(source.Source, source.Mirrors)
-					if err != nil {
-						// TODO
-						klog.Warningf("error updating registry mirroring config %s's source %s : %w",
-							icsp.Name, source.Source, err)
-						continue
-					}
-				}
-			case watch.Deleted:
-				// TODO is this valid
-				for _, source := range icsp.Spec.RepositoryDigestMirrors {
-					err = ic.DeleteRegistryMirroringConfig(source.Source)
-					if err != nil {
-						// TODO
-						klog.Warningf("error removing registry mirroring config %s's source %s : %w",
-							icsp.Name, source.Source, err)
-						continue
-					}
-				}
-			}
-		}, nil)
 	return ic
 }
 
-func parseRegistryCerts(cm *v1.ConfigMap) []registryCertTuple {
+// ParseRegistryCerts parses the registry certs from a map of registry url to cert
+// This map, in ocp, is stored in the data field of the configmap "image-registry-certifiates" in the
+// openshift-image-registry namespace.
+func ParseRegistryCerts(dataMap map[string]string) []registryCertTuple {
 	var registryCertTuples []registryCertTuple
-	for k, v := range cm.Data {
+	for k, v := range dataMap {
 		registryCertTuples = append(registryCertTuples, registryCertTuple{
 			registry: k,
 			cert:     v,
